@@ -14,7 +14,8 @@
 #include "./imgui/imgui_internal.h"
 #include "cimgui.h"
 
-
+thread_local ImGuiContext* MyImGuiTLS;
+#define GImGui MyImGuiTLS
 
 #include "auto_funcs.cpp"
 

@@ -1388,7 +1388,6 @@ typedef int ImGuiSeparatorFlags;
 typedef int ImGuiTextFlags;
 typedef int ImGuiTooltipFlags;
 typedef void (*ImGuiErrorLogCallback)(void* user_data, const char* fmt, ...);
-extern ImGuiContext* GImGui;
 typedef struct StbUndoRecord StbUndoRecord;
 struct StbUndoRecord
 {

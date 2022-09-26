@@ -18,7 +18,8 @@
 #include "./imgui/imgui_internal.h"
 #include "cimgui.h"
 
-
+thread_local ImGuiContext* MyImGuiTLS;
+#define GImGui MyImGuiTLS
 
 CIMGUI_API ImVec2* ImVec2_ImVec2_Nil(void)
 {
