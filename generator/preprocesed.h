@@ -7,6 +7,7 @@ typedef union SDL_Event SDL_Event;
  bool ImGui_ImplSDL2_InitForD3D(SDL_Window* window);
  bool ImGui_ImplSDL2_InitForMetal(SDL_Window* window);
  bool ImGui_ImplSDL2_InitForSDLRenderer(SDL_Window* window, SDL_Renderer* renderer);
+ bool ImGui_ImplSDL2_InitForOther(SDL_Window* window);
  void ImGui_ImplSDL2_Shutdown();
  void ImGui_ImplSDL2_NewFrame();
  bool ImGui_ImplSDL2_ProcessEvent(const SDL_Event* event);
