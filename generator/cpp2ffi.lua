@@ -68,6 +68,7 @@ local function ToStr(t,dometatables)
 	_ToStr(t,strTG,recG,nameG)
 	return table.concat(strTG)
 end
+M.ToStr = ToStr
 function M.prtable(...)
 	for i=1, select('#', ...) do
 		local t = select(i, ...)
@@ -345,7 +346,7 @@ local function getRE()
 	return res,resN
 end
 local function isLeaf(re)
-	return (re ~= "typedef_st_re" and re ~= "struct_re" and re~="namespace_re" and re~="class_re")
+	return (re ~= "typedef_st_re" and re ~= "struct_re" and re~="namespace_re" and re~="class_re" and re~="union_re")
 end
 M.getRE = getRE
 --takes preprocesed file in table cdefsor and returns items
@@ -986,15 +987,28 @@ local function ADDIMSTR_S(FP)
 				if dd.signature == defT2.signature then 
 					doadd = false;
 					print("skip _S addition",defT2.cimguiname)
+					--M.prtable(defT2)
 					break 
 				end
 			end
+			--delete imstrv generation
+			if FP.NOIMSTRV then
+				newcdefs[#newcdefs] = nil
+				cimf[t.signature] = nil
+				for i,v in ipairs(cimf) do
+					if v.signature == t.signature then
+						table.remove(cimf, i)
+						break
+					end
+				end
+			end
 			--add _S version
-			if doadd then
+			if doadd and not FP.NOCHAR then
 			cimf[#cimf+1] = defT2
 			cimf[defT2.signature] = defT2
 			newcdefs[#newcdefs+1] = {stname=t.stname,funcname=t.funcname,args=defT2.args,signature=defT2.signature,cimguiname=defT2.cimguiname,ret =defT2.ret}
 			end
+			
         end
 		else print("not cimguiname in");M.prtable(t)
         end
@@ -1278,7 +1292,8 @@ function M.Parser()
 				end
 				if it.re_name == "struct_re" then
 					local typename = it.item:match("^%s*template%s*<%s*typename%s*(%S+)%s*>")
-					local stname = it.item:match("struct%s+(%S+)")
+					--local stname = it.item:match("struct%s+(%S+)")
+					local stname = it.item:match("struct%s+([^%s{]+)") --unamed
 					it.name = stname
 					
 					--local templa1,templa2 = it.item:match("^%s*template%s*<%s*(%S+)%s*(%S+)%s*>")
@@ -1295,6 +1310,21 @@ function M.Parser()
 			end
 		end
 		return itsarr
+	end
+	local function sanitize_comments(txt)
+		local txtclean = {}
+		local reg = "//[^\n\r]+"
+		local ini = 1
+		local i,e,a = txt:find(reg,ini)
+		while i do
+			table.insert(txtclean,txt:sub(ini,i-1))
+			local com = txt:sub(i,e):gsub("[{}]+","")
+			table.insert(txtclean,com)
+			ini = e + 1
+			i,e,a = txt:find(reg,ini)
+		end
+		table.insert(txtclean,txt:sub(ini,-1))
+		return table.concat(txtclean)
 	end
 	function par:parseItems()
 		self:initTypedefsDict()
@@ -1317,8 +1347,17 @@ function M.Parser()
 			table.insert(cdefs2,cdef[1])
 		end
 		local txt = table.concat(cdefs2,"\n")
+		--string substitution
+		if self.str_subst then
+			for k,v in pairs(self.str_subst) do
+				txt = txt:gsub(k,v)
+			end
+		end
+		--save_data("./preprocode"..tostring(self):gsub("table: ","")..".c",txt)
 		--clean bad positioned comments inside functionD_re
 		if self.COMMENTS_GENERATION then
+		print"cleaning { and } inside comments"
+			txt = sanitize_comments(txt)
 		print"cleaning comments inside functionD_re--------------"
 		---[[
 		local nn = 0
@@ -1344,6 +1383,7 @@ function M.Parser()
 		print("end cleaning ------------------------------",nn)
 		txt = table.concat(txtclean)
 		end
+		--save_data("./preparse"..tostring(self):gsub("table: ","")..".c",txt)
 		--]]
 		self.itemsarr = par:parseItemsR2(txt)
 		itemsarr = self.itemsarr
@@ -1394,12 +1434,19 @@ function M.Parser()
 			stname = stru:match("%b{}%s*(%S+)%s*;")
 		end
 		
+		local is_nested
 		if not stname then
-			print(stru)
-			error"could not get stname"
+			is_nested = itst.parent and (itst.parent.re_name == "struct_re")
+			if is_nested then
+				--print("unamed nested struct",stru)
+				stname = ""
+			else
+				print(stru)
+				error"could not get stname"
+			end
 		end
 		--initial
-		--table.insert(outtab,stru:match("(.-)%b{}"))
+
 		table.insert(outtab,"\nstruct "..stname.."\n")
 		table.insert(outtab,"{")
 		table.insert(commtab,"")
@@ -1417,50 +1464,72 @@ function M.Parser()
 			return "" 
 		end --here we avoid empty structs
 		for j,it in ipairs(itlist) do
-			if (it.re_name == "vardef_re" or it.re_name == "functype_re" or it.re_name == "union_re") then
-			if  not (it.re_name == "vardef_re" and it.item:match"static") then --skip static variables
-				local it2 = it.item --:gsub("<([%w_]+)>","_%1") --templates
-				--local ttype,template = it.item:match("([^%s,%(%)]+)%s*<(.+)>")
-				local ttype,template,te,code2 =  check_template(it2)  --it.item:match"([^%s,%(%)]+)%s*<(.+)>"
-				if template then
-					if self.typenames[ttype] ~= template then --rule out T (template typename)
-						self.templates[ttype] = self.templates[ttype] or {}
-						self.templates[ttype][template] = te
-						it2=code2
+			if (it.re_name == "vardef_re" or it.re_name == "functype_re") then -- or it.re_name == "union_re") then
+				if  not (it.re_name == "vardef_re" and it.item:match"static") then --skip static variables
+				
+					local it2 = it.item --:gsub("<([%w_]+)>","_%1") --templates
+					--local ttype,template = it.item:match("([^%s,%(%)]+)%s*<(.+)>")
+					local ttype,template,te,code2 =  check_template(it2)  --it.item:match"([^%s,%(%)]+)%s*<(.+)>"
+					if template then
+						if self.typenames[ttype] ~= template then --rule out T (template typename)
+							self.templates[ttype] = self.templates[ttype] or {}
+							self.templates[ttype][template] = te
+							it2=code2
+						end
+						if doheader then
+							local templatetypedef = self:gentemplatetypedef(ttype, template,self.templates[ttype][template])
+							predeclare = predeclare .. templatetypedef
+						end
 					end
-					if doheader then
-						local templatetypedef = self:gentemplatetypedef(ttype, template,self.templates[ttype][template])
-						predeclare = predeclare .. templatetypedef
+					--clean mutable
+					it2 = it2:gsub("mutable","")
+					--clean namespaces
+					it2 = it2:gsub("%w+::","")
+					--clean initializations
+					if it.re_name == "vardef_re" then
+						it2 = it2:gsub("%s*=.+;",";")
+						it2 = it2:gsub("%b{}","")
 					end
-				end
-				--clean mutable
-				it2 = it2:gsub("mutable","")
-				--clean namespaces
-				it2 = it2:gsub("%w+::","")
-				--clean initializations
-				if it.re_name == "vardef_re" then
-					it2 = it2:gsub("%s*=.+;",";")
-				end
-				table.insert(outtab,it2)
-				table.insert(commtab,{above=it.prevcomments,sameline=it.comments})--it.comments or "")
-				end
-			elseif it.re_name == "struct_re" then
-				--check if has declaration
-				local decl = it.item:match"%b{}%s*([^%s}{]+)%s*;"
-				if decl then
-					table.insert(outtab,"\n    "..it.name.." "..decl..";")
+					table.insert(outtab,it2)
 					table.insert(commtab,{above=it.prevcomments,sameline=it.comments})--it.comments or "")
 				end
+			elseif it.re_name == "union_re" then
+				local com = ""
+				for _,ch in ipairs(it.childs) do
+					com = com .. (ch.comments or "")
+				end
+				local item = clean_comments(it.item)
+				table.insert(outtab,item)
+				com = (com ~= "") and com or nil
+				table.insert(commtab,{above=it.prevcomments,sameline=com})
+			elseif it.re_name == "struct_re" then
+				--print("nested struct in",stname,it.name)
+				--check if has declaration
+				local decl = it.item:match"%b{}%s*([^%s}{]+)%s*;"
 				local cleanst,structname,strtab,comstab,predec = self:clean_structR1(it,doheader)
-				if doheader then
-				local tst = "\ntypedef struct "..structname.." "..structname..";\n"
+				if not structname  then --unamed nested struct
+					--print("----generate unamed nested struct----",it.name)
+					--M.prtable(it)
+					local nestst = cleanst:gsub(";$"," "..decl..";")
+					table.insert(outtab,nestst)
+					table.insert(commtab,{})
+				else
+					
+					if decl then
+						table.insert(outtab,"\n    "..it.name.." "..decl..";")
+						table.insert(commtab,{above=it.prevcomments,sameline=it.comments})--it.comments or "")
+					end
+					
+					if doheader then
+						local tst = "\ntypedef struct "..structname.." "..structname..";\n"
 						if check_unique_typedefs(tst,uniques) then
 							--table.insert(outtab,tst)
 							--print("xxxxxxxxxxxxxxxinsert typedef",structname)
 							cleanst = cleanst .. tst
 						end
+					end
+					predeclare = predeclare .. predec .. cleanst
 				end
-				predeclare = predeclare .. predec .. cleanst
 			elseif it.re_name == "enum_re" then
 				--nop
 			elseif it.re_name ~= "functionD_re" and it.re_name ~= "function_re" then
@@ -1470,6 +1539,9 @@ function M.Parser()
 		end
 		--final
 		table.insert(outtab,"\n};")
+		if (stname=="" and is_nested) then
+			stname = nil
+		end
 		return table.concat(outtab,""),stname,outtab,commtab, predeclare
 	end
 	local function get_parents_name(it)
@@ -1597,15 +1669,17 @@ function M.Parser()
 					end
 				end
 				if it.parent  then --and (it.parent.re_name == "struct_re" or it.parent.re_name == "typedef_st_re" then
-					local embededst = (it.re_name == "struct_re" and it.item:match("struct%s+(%S+)")) 
+					local embededst = (it.re_name == "struct_re" and it.item:match("struct%s+([^%s{]+)")) 
 					or (it.re_name == "typedef_st_re" and it.item:match("%b{}%s*(%S+)%s*;"))
 					--TODO nesting namespace and class
-					local parname = get_parents_name(it)
-					if it.parent.re_name == "struct_re" then
-						--needed by cimnodes with struct tag name equals member name
-						self.embeded_structs[embededst] = "struct "..parname..embededst
-					else
-						self.embeded_structs[embededst] = parname..embededst
+					if embededst then --discards false which can happen with untagged structs
+						local parname = get_parents_name(it)
+						if it.parent.re_name == "struct_re" then
+							--needed by cimnodes with struct tag name equals member name
+							self.embeded_structs[embededst] = "struct "..parname..embededst
+						else
+							self.embeded_structs[embededst] = parname..embededst
+						end
 					end
 				end
 			elseif it.re_name == "namespace_re" or it.re_name == "union_re" or it.re_name == "functype_re" then
@@ -1673,8 +1747,9 @@ function M.Parser()
             end
 			local template_type 
 			for k,v in pairs(self.templates) do
-				local template_type2 = typen:match(k.."_(.+)")
-				if template_type2 then 
+				--local template_type2 = typen:match(k.."_(.+)")
+				local template_type2 = typen:match(k.."_([^%*]+)") --discard * for pointers
+				if template_type2 then
 					for k1,k2 in pairs(v) do
 						if template_type2==k2 then
 							template_type=k1

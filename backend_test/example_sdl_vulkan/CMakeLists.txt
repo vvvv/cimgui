@@ -55,7 +55,7 @@ list(APPEND IMGUI_LIBRARIES Vulkan::Vulkan)
 list(APPEND IMGUI_SOURCES ${BACKENDS_FOLDER}imgui_impl_vulkan.cpp)
 
 #sdl2
-list(APPEND IMGUI_SOURCES ${BACKENDS_FOLDER}imgui_impl_sdl.cpp)
+list(APPEND IMGUI_SOURCES ${BACKENDS_FOLDER}imgui_impl_sdl2.cpp)
 if(DEFINED SDL_PATH)
 	message(STATUS "SDL_PATH defined as " ${SDL_PATH})
 	FIND_PACKAGE(SDL2 PATHS ${SDL_PATH})
@@ -92,7 +92,7 @@ target_link_libraries(cimgui_sdl ${IMGUI_LIBRARIES} ${IMGUI_SDL_LIBRARY})
 #using library
 include_directories(../../generator/output/)
 add_executable(test_sdl main.c)
-target_compile_definitions(test_sdl PUBLIC -DCIMGUI_USE_VULKAN -DCIMGUI_USE_SDL)
+target_compile_definitions(test_sdl PUBLIC -DCIMGUI_USE_VULKAN -DCIMGUI_USE_SDL2)
 if (MINGW)
 target_link_options(test_sdl PRIVATE "-mconsole")
 endif()

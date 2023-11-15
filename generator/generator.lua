@@ -9,6 +9,8 @@ local COMPILER = script_args[1]
 local INTERNAL_GENERATION = script_args[2]:match("internal") and true or false
 local FREETYPE_GENERATION = script_args[2]:match("freetype") and true or false
 local COMMENTS_GENERATION = script_args[2]:match("comments") and true or false
+local NOCHAR = script_args[2]:match("nochar") and true or false
+local NOIMSTRV = script_args[2]:match("noimstrv") and true or false
 local IMGUI_PATH = os.getenv"IMGUI_PATH" or "../imgui"
 local CFLAGS = ""
 local CPRE,CTEST
@@ -249,7 +251,9 @@ local function cimgui_generation(parser)
 		cstructsstr = cstructsstr.."\n#define IMGUI_HAS_DOCK       1\n"
 	end
 	if gdefines.IMGUI_HAS_IMSTR then
+		if not (NOCHAR or NOIMSTRV) then
 		cstructsstr = cstructsstr.."\n#define IMGUI_HAS_IMSTR       1\n"
+		end
 	end
 	
     hstrfile = hstrfile:gsub([[#include "imgui_structs%.h"]],cstructsstr)
@@ -291,7 +295,10 @@ if gdefines.IMGUI_HAS_DOCK then
 ]]
 	
 end
+assert(not NOCHAR or not NOIMSTRV,"nochar and noimstrv cant be set at the same time")
 print("IMGUI_HAS_IMSTR",gdefines.IMGUI_HAS_IMSTR)
+print("NOCHAR",NOCHAR)
+print("NOIMSTRV",NOIMSTRV)
 print("IMGUI_HAS_DOCK",gdefines.IMGUI_HAS_DOCK)
 print("IMGUI_VERSION",gdefines.IMGUI_VERSION)
 
@@ -311,6 +318,8 @@ local function parseImGuiHeader(header,names)
 	parser.UDTs = {"ImVec2","ImVec4","ImColor","ImRect"}
 	--parser.gen_template_typedef = gen_template_typedef --use auto
 	parser.COMMENTS_GENERATION = COMMENTS_GENERATION
+	parser.NOCHAR = NOCHAR
+	parser.NOIMSTRV = NOIMSTRV
 	local defines = parser:take_lines(CPRE..header,names,COMPILER)
 	
 	return parser
@@ -340,6 +349,8 @@ local parser1 = parseImGuiHeader(extra_includes .. [[headers.h]],headersT)
 os.remove("headers.h")
 parser1:do_parse()
 
+--to debug items parsing
+--save_data("./itemsarr2.txt",cpp2ffi.ToStr(parser1.itemsarr))
 save_data("./output/overloads.txt",parser1.overloadstxt)
 cimgui_generation(parser1)
 
@@ -438,9 +449,9 @@ end
 local json = require"json"
 save_data("./output/definitions.json",json.encode(json_prepare(parser1.defsT),{dict_on_empty={defaults=true}}))
 --delete extra info for json
-structs_and_enums_table.templated_structs = nil
-structs_and_enums_table.typenames = nil
-structs_and_enums_table.templates_done = nil
+--structs_and_enums_table.templated_structs = nil
+--structs_and_enums_table.typenames = nil
+--structs_and_enums_table.templates_done = nil
 save_data("./output/structs_and_enums.json",json.encode(structs_and_enums_table))
 save_data("./output/typedefs_dict.json",json.encode(parser1.typedefs_dict))
 if parser2 then
